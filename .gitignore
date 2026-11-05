@@ -5,3 +5,15 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Local data, secrets and databases
+data/
+*.session
+*.session-journal
+*.sqlite3
+*.sqlite3-journal
+auth_token
+config.json
+__pycache__/
+*.pyc
+venv/

@@ -20,8 +20,14 @@
     // Immediately strip token from address bar
     window.history.replaceState(null, '', window.location.pathname + window.location.search);
   } else {
-    authToken = sessionStorage.getItem('tg_geo_token') || window.__BOOTSTRAP_AUTH_TOKEN__ || '';
-    if (authToken && !sessionStorage.getItem('tg_geo_token')) {
+    authToken = sessionStorage.getItem('tg_geo_token') || '';
+  }
+
+  // If token is missing, show prominent token input modal/prompt
+  if (!authToken) {
+    const entered = window.prompt('Введите токен доступа из консоли сервера (параметр #token=... при запуске):');
+    if (entered) {
+      authToken = entered.trim();
       sessionStorage.setItem('tg_geo_token', authToken);
     }
   }

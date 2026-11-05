@@ -9,9 +9,9 @@ Features:
 """
 
 import os
+import time
 import asyncio
 from typing import Optional, Callable, Dict, Any, List
-from datetime import datetime
 
 try:
     from telethon import TelegramClient, events
@@ -56,6 +56,7 @@ class TelegramService:
         self.on_geo_update_callback: Optional[Callable[[Dict[str, Any]], None]] = None
         self.disconnect_time: Optional[int] = None
         self._is_reconnecting = False
+        self._handlers_registered = False
         self.tracked_live_messages: Dict[str, Dict[str, Any]] = {}
 
     def _ensure_session_permissions(self):
@@ -104,7 +105,7 @@ class TelegramService:
                     self.is_authenticated = True
                     self._register_event_handlers()
                     # Check for data gaps after reconnect and resync tracked messages
-                    now_ts = int(datetime.utcnow().timestamp())
+                    now_ts = int(time.time())
                     if self.disconnect_time and self.db:
                         for contact_id, last_ts in self.last_received_timestamps.items():
                             if now_ts - last_ts > 60:
@@ -189,7 +190,7 @@ class TelegramService:
         """
         if not self.client or not self.is_authenticated:
             return
-        now_ts = int(datetime.utcnow().timestamp())
+        now_ts = int(time.time())
         for key, info in list(self.tracked_live_messages.items()):
             try:
                 chat_id = info["chat_id"]
@@ -203,6 +204,13 @@ class TelegramService:
                         if self.db:
                             self.db.insert_gap(contact_id, last_known_ts, now_ts, "reconnect_sync_gap")
                     self.last_received_timestamps[contact_id] = edit_time
+                    
+                    # Fetch latest edit_number from DB to avoid resetting to 1 on reconnect
+                    prev_points = self.db.get_recent_points_for_evaluation(contact_id, limit=1) if self.db else []
+                    last_num = prev_points[0].get("edit_number", 0) if prev_points else 0
+                    current_num = last_num + 1
+                    self.edit_counters[key] = current_num
+
                     # Trigger geo update with latest point
                     geo = getattr(msg.media, "geo", None)
                     if geo:
@@ -218,8 +226,8 @@ class TelegramService:
                             "heading": getattr(msg.media, "heading", None),
                             "live_period": getattr(msg.media, "period", None),
                             "edit_date": edit_time,
-                            "received_at": int(datetime.utcnow().timestamp() * 1000),
-                            "edit_number": 1,
+                            "received_at": int(time.time() * 1000),
+                            "edit_number": current_num,
                             "is_after_gap": True
                         }
                         if self.on_geo_update_callback:
@@ -292,7 +300,7 @@ class TelegramService:
                                 "accuracy": getattr(geo, "accuracy_radius", None),
                                 "heading": getattr(media, "heading", None),
                                 "edit_date": edit_time,
-                                "received_at": int(datetime.utcnow().timestamp() * 1000),
+                                "received_at": int(time.time() * 1000),
                             }
                             break  # Found active live stream for this contact
                         elif isinstance(media, MessageMediaGeo) and not stream_for_dialog:
@@ -312,7 +320,7 @@ class TelegramService:
                                 "accuracy": getattr(geo, "accuracy_radius", None),
                                 "heading": None,
                                 "edit_date": date_time,
-                                "received_at": int(datetime.utcnow().timestamp() * 1000),
+                                "received_at": int(time.time() * 1000),
                             }
                 except FloodWaitError as e:
                     await asyncio.sleep(e.seconds)
@@ -342,7 +350,7 @@ class TelegramService:
                                     "accuracy": getattr(geo, "accuracy_radius", None),
                                     "heading": getattr(media, "heading", None),
                                     "edit_date": edit_time,
-                                    "received_at": int(datetime.utcnow().timestamp() * 1000),
+                                    "received_at": int(time.time() * 1000),
                                 }
                                 break
                     except Exception:
@@ -367,8 +375,9 @@ class TelegramService:
         return found_streams
 
     def _register_event_handlers(self):
-        if not self.client:
+        if not self.client or self._handlers_registered:
             return
+        self._handlers_registered = True
 
         @self.client.on(events.MessageEdited())
         async def on_message_edited(event):
@@ -379,6 +388,12 @@ class TelegramService:
             await self._handle_geo_event(event, is_edit=False)
 
     async def _handle_geo_event(self, event, is_edit: bool = False):
+        # Only track 1-on-1 private chats and incoming messages from the contact (not own outgoing messages)
+        if not getattr(event, "is_private", True):
+            return
+        if getattr(event, "out", False):
+            return
+
         message = event.message
         if not message or not message.media:
             return
@@ -395,7 +410,8 @@ class TelegramService:
             return
 
         sender = await event.get_sender()
-        contact_id = str(event.chat_id)
+        # Contact ID is sender.id for private messages
+        contact_id = str(sender.id if sender and hasattr(sender, "id") else event.chat_id)
         first_name = getattr(sender, 'first_name', '') or ''
         last_name = getattr(sender, 'last_name', '') or ''
         contact_name = f"{first_name} {last_name}".strip()
@@ -403,11 +419,15 @@ class TelegramService:
             contact_name = getattr(sender, "username", "") or f"User_{contact_id}"
 
         key = f"{contact_id}_{message.id}"
-        self.edit_counters[key] = self.edit_counters.get(key, 0) + 1
+        if key not in self.edit_counters:
+            # Check DB for previous edit number to avoid restart reset to 1
+            prev = self.db.get_recent_points_for_evaluation(contact_id, limit=1) if self.db else []
+            self.edit_counters[key] = prev[0].get("edit_number", 0) if prev else 0
+        self.edit_counters[key] += 1
         edit_num = self.edit_counters[key]
 
         edit_time = int(message.edit_date.timestamp()) if message.edit_date else int(message.date.timestamp())
-        now_ms = int(datetime.utcnow().timestamp() * 1000)
+        now_ms = int(time.time() * 1000)
 
         # Check for gap between previous reception for this contact
         last_ts = self.last_received_timestamps.get(contact_id)

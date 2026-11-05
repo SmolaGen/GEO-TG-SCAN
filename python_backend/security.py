@@ -24,26 +24,43 @@ class SecurityManager:
 
     def validate_origin(self, origin: Optional[str]) -> bool:
         if not origin:
-            # Same-origin requests might not have Origin header in browsers
+            # Same-origin GET/fetch may omit Origin in browsers
             return True
-        clean = origin.rstrip("/")
-        if clean in self.allowed_origins:
+        from urllib.parse import urlparse
+        try:
+            parsed = urlparse(origin)
+            # Only http or https schemes allowed
+            if parsed.scheme not in {"http", "https"}:
+                return False
+            # Strict hostname check: strictly 127.0.0.1 or localhost (no evil subdomains like localhost.evil.com)
+            if parsed.hostname not in {"127.0.0.1", "localhost"}:
+                return False
+            # If port specified, must match allowed ports
+            if parsed.port and parsed.port not in {8000, 3000}:
+                return False
             return True
-        # Allow internal preview environment domains
-        if clean.endswith(".run.app") or clean.startswith("https://ais-") or "localhost" in clean or "127.0.0.1" in clean:
-            return True
-        return False
+        except Exception:
+            return False
 
     def validate_host(self, host: Optional[str]) -> bool:
         if not host:
             return False
-        # Remove trailing port if present or check full host
-        base = host.split(":")[0]
-        if host in self.allowed_hosts or base in {"127.0.0.1", "localhost", "0.0.0.0"}:
-            return True
-        if host.endswith(".run.app") or base.endswith(".run.app"):
-            return True
-        return False
+        # Strict Host check against DNS rebinding
+        # Format: hostname or hostname:port
+        parts = host.split(":")
+        hostname = parts[0].lower().strip()
+        if hostname not in {"127.0.0.1", "localhost"}:
+            return False
+        if len(parts) == 2:
+            try:
+                port = int(parts[1])
+                if port not in {8000, 3000}:
+                    return False
+            except ValueError:
+                return False
+        elif len(parts) > 2:
+            return False
+        return True
 
 class SecurityMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, security_mgr: SecurityManager):

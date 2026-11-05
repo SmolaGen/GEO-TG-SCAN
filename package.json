@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "python3 -m uvicorn python_backend.main:app --host 0.0.0.0 --port 3000",
+    "dev": "python3 -m uvicorn python_backend.main:app --host 127.0.0.1 --port 3000",
     "build": "python3 -m unittest discover -s python_backend/tests",
-    "start": "python3 -m uvicorn python_backend.main:app --host 0.0.0.0 --port 3000",
+    "start": "python3 -m uvicorn python_backend.main:app --host 127.0.0.1 --port 3000",
     "lint": "python3 -m unittest discover -s python_backend/tests",
     "clean": "rm -rf .next"
   },

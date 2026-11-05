@@ -64,5 +64,22 @@ class TestSecurityEndpoints(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertIn("Telegram Live Geo Inspector", res.text)
 
+    def test_html_does_not_contain_token(self):
+        """GET / must never contain auth_token in the HTML body"""
+        res = self.client.get("/", headers={"Host": "127.0.0.1:8000"})
+        self.assertEqual(res.status_code, 200)
+        self.assertNotIn(self.token, res.text)
+        self.assertNotIn("__BOOTSTRAP_AUTH_TOKEN__", res.text)
+
+    def test_origin_subdomain_bypass_rejected(self):
+        """Origin containing localhost or 127.0.0.1 as subdomain must be rejected with 403"""
+        for evil_origin in ["https://localhost.evil.com", "http://127.0.0.1.attacker.net", "http://evil-localhost.com"]:
+            res = self.client.get("/api/status", headers={
+                "Host": "127.0.0.1:8000",
+                "Origin": evil_origin,
+                "Authorization": f"Bearer {self.token}"
+            })
+            self.assertEqual(res.status_code, 403, f"Evil origin {evil_origin} must be rejected with 403")
+
 if __name__ == "__main__":
     unittest.main()

@@ -146,12 +146,7 @@ if FastAPI is not None:
     async def serve_index():
         index_file = os.path.join(static_dir, "index.html")
         if os.path.exists(index_file):
-            with open(index_file, "r", encoding="utf-8") as f:
-                content = f.read()
-            # Inject token bootstrap script safely into head
-            token_script = f'<script>window.__BOOTSTRAP_AUTH_TOKEN__ = "{config.auth_token}";</script>'
-            content = content.replace("</head>", f"{token_script}\n</head>")
-            return HTMLResponse(content)
+            return FileResponse(index_file, media_type="text/html")
         return Response("index.html not found in static dir", status_code=404)
 
     # Mount static assets

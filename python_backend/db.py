@@ -178,7 +178,8 @@ class Database:
             lat, lon, accuracy, heading, last_edit_date, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
-        now = int(os.times().system)
+        import time
+        now = int(time.time())
         with self._get_connection() as conn:
             for s in streams:
                 conn.execute(sql, (

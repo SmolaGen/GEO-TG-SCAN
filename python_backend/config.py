@@ -64,35 +64,8 @@ class AppConfig:
     scan_msg_limit: int = 20
     scan_delay_s: float = 0.5
 
-    # Безопасность
-    auth_token: str = field(default_factory=lambda: "")
-
-    def __post_init__(self):
-        token_path = os.path.join(self.data_dir, "auth_token")
-        if not self.auth_token:
-            if os.path.exists(token_path):
-                try:
-                    with open(token_path, "r", encoding="utf-8") as f:
-                        self.auth_token = f.read().strip()
-                except Exception:
-                    pass
-            if not self.auth_token:
-                self.auth_token = secrets.token_urlsafe(32)
-                try:
-                    os.makedirs(self.data_dir, exist_ok=True)
-                    try:
-                        os.chmod(self.data_dir, 0o700)
-                    except Exception:
-                        pass
-                    fd = os.open(token_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-                    with open(fd, "w", encoding="utf-8") as f:
-                        f.write(self.auth_token)
-                    try:
-                        os.chmod(token_path, 0o600)
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
+    # Безопасность: свежий эфемерный токен для каждой запущенной сессии демона (не персистится)
+    auth_token: str = field(default_factory=lambda: secrets.token_urlsafe(32))
 
     allowed_origins: list = field(default_factory=lambda: [
         "http://127.0.0.1:8000",

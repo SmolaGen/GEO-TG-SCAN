@@ -138,23 +138,40 @@ class AnomalyDetector:
                 # Мгновенный скачок за секунды на километры (всегда аномалия)
                 instant_teleport_leap = distance_m >= self.cfg.teleport_min_distance_m and delta_seconds <= 5.0
 
-                # Признак перелёта: высокая скорость (>350 км/ч до 1150 км/ч) без мгновенного прыжка в секунды
-                is_flight_segment = (
+                # Признак перелёта: устойчивая высокая скорость (>350 км/ч до 1150 км/ч)
+                is_high_speed = (
                     not instant_teleport_leap and
                     speed_kmh >= self.cfg.flight_speed_threshold_kmh and
                     speed_kmh <= 1150.0
                 )
 
-                if is_flight_segment:
-                    is_flight = True
-                    flags.append(AnomalyFlag(
-                        rule_id="possible_flight",
-                        rule_name="Возможно, перелёт (авиа)",
-                        weight=0, # Не начисляем штрафные баллы за скорость при перелёте
-                        explanation=f"Скорость {speed_kmh:.0f} км/ч ({distance_m:.0f} м за {delta_seconds:.1f} с) характерна для авиаперелёта. Баллы за скорость не начисляются.",
-                        observed_value=f"{speed_kmh:.0f} км/ч",
-                        threshold=f"> {self.cfg.flight_speed_threshold_kmh:.0f} км/ч"
-                    ))
+                if is_high_speed:
+                    # Проверяем серию точек высокой скорости (cfg.flight_min_points)
+                    recent_speeds = [p.get("speed_kmh", 0) for p in history[-(self.cfg.flight_min_points - 1):]] if history else []
+                    has_flight_series = len(recent_speeds) >= (self.cfg.flight_min_points - 1) and all(
+                        s >= self.cfg.flight_speed_threshold_kmh * 0.8 for s in recent_speeds
+                    )
+                    
+                    if has_flight_series or len(history) < self.cfg.flight_min_points:
+                        is_flight = True
+                        flags.append(AnomalyFlag(
+                            rule_id="possible_flight",
+                            rule_name="Возможно, перелёт (авиа)",
+                            weight=0, # Не начисляем штрафные баллы за скорость при перелёте
+                            explanation=f"Скорость {speed_kmh:.0f} км/ч ({distance_m:.0f} м за {delta_seconds:.1f} с) характерна для авиаперелёта. Баллы за скорость не начисляются.",
+                            observed_value=f"{speed_kmh:.0f} км/ч",
+                            threshold=f"> {self.cfg.flight_speed_threshold_kmh:.0f} км/ч"
+                        ))
+                    else:
+                        # Одиночный изолированный скачок скорости без серии - телепортация
+                        flags.append(AnomalyFlag(
+                            rule_id="teleportation",
+                            rule_name="Телепортация координат",
+                            weight=45,
+                            explanation=f"Скорость перемещения {speed_kmh:.0f} км/ч без устойчивой траектории полёта превышает порог.",
+                            observed_value=f"{speed_kmh:.0f} км/ч",
+                            threshold=f"{self.cfg.max_credible_speed_kmh:.0f} км/ч"
+                        ))
                 elif instant_teleport_leap or speed_kmh > self.cfg.max_credible_speed_kmh:
                     flags.append(AnomalyFlag(
                         rule_id="teleportation",
@@ -259,14 +276,16 @@ class AnomalyDetector:
                     threshold=f"< {self.cfg.accuracy_min_realistic_m} м"
                 ))
 
-            if len(history) >= self.cfg.accuracy_fixed_reps:
+            # Фиксированная точность подозрительна ТОЛЬКО при движении (speed_kmh > 5 км/ч).
+            # На стоящем телефоне (на столе/парковке) неизменная точность естественна и не штрафуется.
+            if speed_kmh >= 5.0 and len(history) >= self.cfg.accuracy_fixed_reps:
                 recent_accs = [p.get("accuracy") for p in history[-self.cfg.accuracy_fixed_reps:] if p.get("accuracy") is not None]
                 if len(recent_accs) >= self.cfg.accuracy_fixed_reps and all(abs(a - curr_acc) < 0.001 for a in recent_accs):
                     flags.append(AnomalyFlag(
                         rule_id="suspicious_accuracy_fixed",
                         rule_name="Фиксированное значение точности",
                         weight=15,
-                        explanation=f"Точность неизменно равна {curr_acc} м {self.cfg.accuracy_fixed_reps + 1} правок подряд.",
+                        explanation=f"Точность неизменно равна {curr_acc} м {self.cfg.accuracy_fixed_reps + 1} правок подряд при движении.",
                         observed_value=f"{curr_acc} м",
                         threshold=f"{self.cfg.accuracy_fixed_reps} повторов"
                     ))
@@ -361,9 +380,19 @@ class AnomalyDetector:
                 return flag_obj.get("weight", 0)
             return getattr(flag_obj, "weight", 0)
 
-        # Подсчёт баллов скользящего окна
+        # Подсчёт баллов скользящего окна с затуханием (decay) и ограничением вклада прошлого
+        # Чтобы слабые повторяющиеся признаки из прошлых точек не раздували статус до "найдены аномалии"
         recent_pts = history[-5:]
-        recent_weight = sum(sum(get_flag_weight(f) for f in p.get("anomaly_flags", [])) for p in recent_pts) * 0.4
+        decay_factors = [0.05, 0.08, 0.12, 0.18, 0.25]
+        offset = len(decay_factors) - len(recent_pts)
+        past_weighted_sum = 0.0
+        for idx, p in enumerate(recent_pts):
+            w = sum(get_flag_weight(f) for f in p.get("anomaly_flags", []))
+            factor = decay_factors[offset + idx]
+            past_weighted_sum += w * factor
+
+        # Вклад прошлых точек ограничен 20 баллами, чтобы без текущих флагов статус не взлетал
+        recent_weight = min(20.0, past_weighted_sum)
         curr_weight = sum(f.weight for f in flags)
         total_score = min(100, round(curr_weight + recent_weight))
 
