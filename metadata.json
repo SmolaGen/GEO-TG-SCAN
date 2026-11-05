@@ -1,0 +1,6 @@
+{
+  "name": "Telegram Live Geo Inspector",
+  "description": "Локальное приложение для мониторинга бессрочной live-геопозиции из Telegram, анализа истории и обнаружения аномалий в переданных координатах.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

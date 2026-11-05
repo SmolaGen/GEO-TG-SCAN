@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Telegram Live Geo Inspector</title>
+  <link id="favicon" rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='46' fill='%2310b981'/><polygon points='50,20 62,55 50,48 38,55' fill='white'/></svg>">
+
+  <!-- Leaflet CSS & JS via local static vendor -->
+  <link rel="stylesheet" href="/static/vendor/leaflet.css" />
+  <script src="/static/vendor/leaflet.js"></script>
+
+  <style>
+    :root {
+      --bg-dark: #090d16;
+      --bg-card: #111827;
+      --bg-card-subtle: #1f2937;
+      --border-color: #374151;
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --accent-blue: #3b82f6;
+      --accent-green: #10b981;
+      --accent-yellow: #f59e0b;
+      --accent-red: #ef4444;
+      --accent-purple: #8b5cf6;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border-color);
+      padding: 0.75rem 1.25rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+    .brand-title {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #fff;
+    }
+    .badge-local {
+      background: rgba(16, 185, 129, 0.2);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      padding: 0.15rem 0.5rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    button, .btn {
+      background: var(--bg-card-subtle);
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      padding: 0.45rem 0.85rem;
+      border-radius: 6px;
+      font-size: 0.825rem;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    button:hover, .btn:hover {
+      background: #374151;
+      border-color: #4b5563;
+    }
+    .btn-primary {
+      background: #2563eb;
+      border-color: #1d4ed8;
+      color: white;
+    }
+    .btn-primary:hover {
+      background: #1d4ed8;
+    }
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.2);
+      color: #f87171;
+      border-color: rgba(239, 68, 68, 0.4);
+    }
+    .btn-danger:hover {
+      background: rgba(239, 68, 68, 0.3);
+    }
+    select, input {
+      background: var(--bg-card-subtle);
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      padding: 0.4rem 0.65rem;
+      border-radius: 6px;
+      font-size: 0.825rem;
+    }
+
+    /* Sound Unlock Banner */
+    #soundBanner {
+      background: #1e1b4b;
+      border-bottom: 1px solid #4338ca;
+      padding: 0.5rem 1.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.825rem;
+      color: #c7d2fe;
+    }
+    #soundBanner.hidden { display: none; }
+
+    /* Security Notice Banner */
+    .legal-notice {
+      background: rgba(30, 41, 59, 0.7);
+      border-bottom: 1px solid rgba(71, 85, 105, 0.4);
+      padding: 0.4rem 1.25rem;
+      font-size: 0.75rem;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    /* Metrics Bar */
+    .metrics-bar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 0.75rem;
+      padding: 0.75rem 1.25rem;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border-color);
+    }
+    .metric-card {
+      background: var(--bg-dark);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+    .metric-title {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .metric-val {
+      font-size: 1.15rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .status-clean { color: #10b981; }
+    .status-suspicious { color: #f59e0b; }
+    .status-flagged { color: #ef4444; }
+
+    /* Main Grid */
+    main {
+      flex: 1;
+      padding: 1rem 1.25rem;
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      gap: 1rem;
+    }
+    @media (max-width: 1024px) {
+      main { grid-template-columns: 1fr; }
+    }
+
+    /* Left Column: Map & Scrubber */
+    .left-col {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    #map {
+      height: 480px;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      z-index: 1;
+      background: #1f2937;
+    }
+    .scrubber-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .scrubber-controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+    .slider-container {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      width: 100%;
+    }
+    input[type=range] {
+      flex: 1;
+      accent-color: #3b82f6;
+    }
+
+    /* Right Column: Anomaly List */
+    .right-col {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 0.85rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .card-title {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .flag-item {
+      background: #1e293b;
+      border-left: 4px solid #ef4444;
+      padding: 0.6rem 0.75rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+    .flag-item.suspicious {
+      border-left-color: #f59e0b;
+    }
+    .flag-item.flight, .flag-item.gap {
+      border-left-color: #3b82f6;
+    }
+    .flag-header {
+      display: flex;
+      justify-content: space-between;
+      font-weight: 600;
+    }
+    .flag-expl {
+      color: #cbd5e1;
+      line-height: 1.35;
+    }
+    .flag-meta {
+      font-size: 0.7rem;
+      color: #94a3b8;
+    }
+
+    /* Table Section */
+    .table-container {
+      grid-column: 1 / -1;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 0.85rem;
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+      text-align: left;
+    }
+    th, td {
+      padding: 0.5rem 0.65rem;
+      border-bottom: 1px solid #1f2937;
+    }
+    th {
+      color: var(--text-muted);
+      font-weight: 600;
+      background: #111827;
+    }
+    tr.selected-row {
+      background: rgba(59, 130, 246, 0.15);
+    }
+    tr.anomaly-row {
+      background: rgba(239, 68, 68, 0.1);
+    }
+    tr:hover {
+      background: #1f2937;
+      cursor: pointer;
+    }
+
+    /* Modal Backdrop */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.75);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      padding: 1rem;
+    }
+    .modal-overlay.active {
+      display: flex;
+    }
+    .modal {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      max-width: 600px;
+      width: 100%;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+    }
+    .modal-header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 700;
+    }
+    .modal-body {
+      padding: 1.25rem;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      font-size: 0.85rem;
+      line-height: 1.5;
+    }
+    .modal-footer {
+      padding: 0.75rem 1.25rem;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      background: var(--bg-dark);
+    }
+
+    /* Custom Leaflet Pin styles */
+    .custom-heading-pin {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      background: #2563eb;
+      border: 2px solid #fff;
+      border-radius: 50%;
+      color: #fff;
+      box-shadow: 0 0 10px rgba(37,99,235,0.8);
+    }
+    .custom-static-pin {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      background: #9333ea;
+      border: 2px solid #fff;
+      border-radius: 4px;
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Audio Unlock Banner -->
+  <div id="soundBanner">
+    <span>🔊 <strong>Звуковые оповещения:</strong> отключены по умолчанию. Включите звук для оповещений при смене статуса.</span>
+    <div style="display: flex; align-items: center; gap: 0.75rem;">
+      <span style="font-size: 0.75rem; color: #a5b4fc;">(Работает только пока вкладка активна — ограничение браузера)</span>
+      <button id="btnUnlockSound" class="btn-primary" style="padding: 0.3rem 0.75rem;">Включить звук</button>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <header>
+    <div class="brand-title">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="12 2 15 11 12 9 9 11"/></svg>
+      <span>Telegram Live Geo Inspector</span>
+      <span class="badge-local">127.0.0.1:8000</span>
+    </div>
+
+    <div class="header-actions">
+      <select id="contactSelect" title="Выберите отслеживаемый контакт">
+        <option value="">Загрузка контактов...</option>
+      </select>
+      <button id="btnScanBroadcasts" title="Поиск активных трансляций в личных диалогах">🔍 Сканировать</button>
+      <button id="btnScenarios" class="btn-primary">🧪 Сценарии тестов</button>
+      <button id="btnWhatCannotSee">ℹ️ Что не видит</button>
+      <button id="btnSettings">⚙️ Пороги</button>
+      <button id="btnAuthTelegram">🔑 Вход в Telegram</button>
+    </div>
+  </header>
+
+  <!-- Legal & Negative Constraints Disclaimer -->
+  <div class="legal-notice">
+    <span>⚠️ <strong>Принцип работы:</strong> Telegram передаёт только заявленные отправителем координаты. Приложение НЕ может доказать подмену и НЕ может доказать подлинность. Любая аномалия — предупреждение эвристики.</span>
+    <span id="sessionSummaryText" style="font-weight: 600;">аномалий не найдено</span>
+  </div>
+
+  <!-- 3 Pillars Metrics Bar -->
+  <div class="metrics-bar">
+    <div class="metric-card">
+      <div class="metric-title">
+        <span>1. Достоверность координат</span>
+        <span id="statusScoreBadge" style="font-weight: 700;">0 / 100</span>
+      </div>
+      <div class="metric-val">
+        <span id="statusIndicator">🟢</span>
+        <span id="statusTextVal" class="status-clean">аномалий не найдено</span>
+      </div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-title">
+        <span>2. Свежесть данных</span>
+        <span id="lastUpdatedTimer">только что</span>
+      </div>
+      <div class="metric-val">
+        <span id="freshnessBadge" style="font-size: 1rem; color: #10b981;">● В сети (Online)</span>
+      </div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-title">
+        <span>3. Параметры телеметрии</span>
+        <span id="pointEditNumber">Правка #1</span>
+      </div>
+      <div class="metric-val" style="font-size: 0.95rem; font-weight: 500;">
+        <span id="metricSpeed">Скорость: 0 км/ч</span> | 
+        <span id="metricAccuracy">Точность: ±10 м</span> | 
+        <span id="metricHeading">Курс: 0°</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Workspace -->
+  <main>
+    <div class="left-col">
+      <div id="map"></div>
+
+      <!-- Scrubber -->
+      <div class="scrubber-card">
+        <div class="scrubber-controls">
+          <div style="display: flex; gap: 0.4rem; align-items: center;">
+            <button id="btnPlayPause">▶ Воспроизвести</button>
+            <select id="playbackSpeedSelect">
+              <option value="1">1x</option>
+              <option value="2">2x</option>
+              <option value="5">5x</option>
+            </select>
+          </div>
+          <label style="font-size: 0.8rem; display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
+            <input type="checkbox" id="checkFollowLive" checked>
+            Следить за Live
+          </label>
+        </div>
+        <div class="slider-container">
+          <span id="scrubCurrentTime" style="font-size: 0.75rem; color: var(--text-muted);">--:--</span>
+          <input type="range" id="timelineSlider" min="0" max="0" value="0">
+          <span id="scrubTotalCount" style="font-size: 0.75rem; color: var(--text-muted);">0 / 0</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="right-col">
+      <div class="card" style="flex: 1;">
+        <div class="card-title">
+          <span>Анализ аномалий</span>
+          <label style="font-size: 0.75rem; font-weight: normal; cursor: pointer;">
+            <input type="checkbox" id="checkOnlyCurrentPoint">
+            Только текущая точка
+          </label>
+        </div>
+        <div id="anomalyListContainer" style="display: flex; flex-direction: column; gap: 0.5rem; overflow-y: auto; max-height: 480px;">
+          <div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 2rem 1rem;">
+            Аномалий не обнаружено. Движение соответствует правдоподобным физическим моделям.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom History Table -->
+    <div class="table-container">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+        <div style="font-weight: 600; font-size: 0.9rem;">
+          История координат и телеметрии (<span id="tablePointsCount">0</span> точек)
+        </div>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <label style="font-size: 0.8rem; cursor: pointer;">
+            <input type="checkbox" id="checkFilterTableAnomalies"> Только аномалии
+          </label>
+          <button id="btnExportGPX">Экспорт GPX</button>
+          <button id="btnExportCSV">Экспорт CSV</button>
+          <button id="btnDeleteHistory" class="btn-danger">Очистить историю</button>
+        </div>
+      </div>
+      <div style="overflow-x: auto; max-height: 280px;">
+        <table id="historyTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Время (edit_date)</th>
+              <th>Тип</th>
+              <th>Широта, Долгота</th>
+              <th>Дистанция</th>
+              <th>Скорость</th>
+              <th>Курс</th>
+              <th>Точность</th>
+              <th>Балл</th>
+              <th>Флаги детектора</th>
+            </tr>
+          </thead>
+          <tbody id="historyTableBody">
+            <tr><td colspan="10" style="text-align: center; color: var(--text-muted);">Нет точек в истории</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <!-- Modal: Что приложение не видит -->
+  <div class="modal-overlay" id="modalWhatCannotSee">
+    <div class="modal">
+      <div class="modal-header">
+        <span>Что приложение принципиально НЕ видит</span>
+        <button class="modal-close" style="background: none; border: none; font-size: 1.25rem; color: #fff;">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>Telegram присылает вашему клиенту исключительно те параметры, которые сформировал телефон отправителя:</p>
+        <ul style="padding-left: 1.25rem; display: flex; flex-direction: column; gap: 0.4rem;">
+          <li>Широта и долгота (WGS84)</li>
+          <li>Необязательный радиус горизонтальной точности (0–1500 м)</li>
+          <li>Курс компаса (0–360°) и период трансляции</li>
+          <li>Время правок сообщения на сервере Telegram (с точностью до целой секунды)</li>
+        </ul>
+        <div style="background: rgba(239, 68, 68, 0.15); border-left: 3px solid #ef4444; padding: 0.75rem; border-radius: 4px;">
+          <strong>Чего НЕТ в протоколе Telegram:</strong>
+          <ul style="padding-left: 1.25rem; margin-top: 0.4rem;">
+            <li>Признака симуляции GPS (Mock Locations / Fake GPS)</li>
+            <li>Данных сервиса Локатор Apple (Find My) или Google Fused Location Provider</li>
+            <li>Реального IP-адреса устройства или признака работы VPN</li>
+            <li>Сырых данных спутников GNSS (NMEA, SNR, созвездия, видимые спутники)</li>
+          </ul>
+        </div>
+        <div style="background: rgba(59, 130, 246, 0.15); border-left: 3px solid #3b82f6; padding: 0.75rem; border-radius: 4px; margin-top: 0.75rem;">
+          <strong>Особенности авиаперелётов и симуляции:</strong>
+          <p style="margin-top: 0.35rem; font-size: 0.85rem; line-height: 1.4;">
+            Плавный маршрут на большой скорости (>350 км/ч) определяется эвристикой как <em>возможный перелёт</em>. Если злоумышленник программно симулирует плавный полёт самолёта, такая подмена <strong>принципиально неотличима</strong> по присланным Telegram координатам от реального нахождения на борту рейса.
+          </p>
+        </div>
+        <p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 0.75rem;">
+          Поэтому приложение оперирует исключительно геометрической и кинематической проверкой правдоподобия. Оно <strong>НЕ может доказать подмену</strong> и <strong>НЕ может подтвердить подлинность</strong>.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-primary modal-close">Понятно</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Настройки порогов -->
+  <div class="modal-overlay" id="modalSettings">
+    <div class="modal">
+      <div class="modal-header">
+        <span>Настройки порогов детектора аномалий</span>
+        <button class="modal-close" style="background: none; border: none; font-size: 1.25rem; color: #fff;">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+          <label style="display: flex; justify-content: space-between; align-items: center;">
+            <span>Макс. наземная скорость (км/ч):</span>
+            <input type="number" id="cfgMaxSpeed" style="width: 100px;" value="250">
+          </label>
+          <label style="display: flex; justify-content: space-between; align-items: center;">
+            <span>Порог скорости авиаперелёта (км/ч):</span>
+            <input type="number" id="cfgFlightSpeed" style="width: 100px;" value="350">
+          </label>
+          <label style="display: flex; justify-content: space-between; align-items: center;">
+            <span>Мин. точек для подтверждения перелёта:</span>
+            <input type="number" id="cfgFlightPoints" style="width: 100px;" value="4">
+          </label>
+          <label style="display: flex; justify-content: space-between; align-items: center;">
+            <span>Мин. скачок телепортации (м):</span>
+            <input type="number" id="cfgTeleportDist" style="width: 100px;" value="2000">
+          </label>
+          <label style="display: flex; justify-content: space-between; align-items: center;">
+            <span>Расхождение курса компаса (градусы):</span>
+            <input type="number" id="cfgHeadingDiff" style="width: 100px;" value="65">
+          </label>
+          <label style="display: flex; justify-content: space-between; align-items: center;">
+            <span>Выборка для теста гладкости (точек):</span>
+            <input type="number" id="cfgSmoothnessPoints" style="width: 100px;" value="30">
+          </label>
+          <label style="display: flex; justify-content: space-between; align-items: center;">
+            <span>Макс. вес тайминга (баллы &le; 5):</span>
+            <input type="number" id="cfgTimingWeight" max="5" style="width: 100px;" value="5">
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="modal-close">Отмена</button>
+        <button id="btnSaveSettings" class="btn-primary">Сохранить на бэкенде</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Сценарии тестов -->
+  <div class="modal-overlay" id="modalScenarios">
+    <div class="modal" style="max-width: 650px;">
+      <div class="modal-header">
+        <span>Сценарии тестирования детектора</span>
+        <button class="modal-close" style="background: none; border: none; font-size: 1.25rem; color: #fff;">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="color: var(--text-muted); font-size: 0.8rem;">
+          Сценарии синтезируются на бэкенде и прогоняются через реальный <code>detector.py</code> без дублирования логики на клиенте.
+        </p>
+        <div id="scenariosListContainer" style="display: flex; flex-direction: column; gap: 0.6rem;">
+          <div style="text-align: center; color: var(--text-muted);">Загрузка списка сценариев...</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="modal-close">Закрыть</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Вход в Telegram -->
+  <div class="modal-overlay" id="modalAuth">
+    <div class="modal" style="max-width: 480px;">
+      <div class="modal-header">
+        <span>Вход в аккаунт Telegram (MTProto)</span>
+        <button class="modal-close" style="background: none; border: none; font-size: 1.25rem; color: #fff;">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="authStep1">
+          <p style="font-size: 0.8rem; color: var(--text-muted);">Введите учетные данные вашего личного приложения с <a href="https://my.telegram.org" target="_blank" style="color: #60a5fa;">my.telegram.org</a>:</p>
+          <div style="display: flex; flex-direction: column; gap: 0.6rem; margin-top: 0.5rem;">
+            <input type="number" id="authApiId" placeholder="App api_id (например, 123456)">
+            <input type="password" id="authApiHash" placeholder="App api_hash">
+            <input type="text" id="authPhone" placeholder="Номер телефона (+79991234567)">
+          </div>
+          <div id="authError1" style="color: #f87171; font-size: 0.75rem; display: none;"></div>
+          <button id="btnSubmitAuthStart" class="btn-primary" style="margin-top: 0.75rem; width: 100%; justify-content: center;">Отправить код в Telegram</button>
+        </div>
+
+        <div id="authStep2" style="display: none;">
+          <p style="font-size: 0.8rem;">Код подтверждения отправлен в ваш аккаунт Telegram. Введите его:</p>
+          <input type="text" id="authCode" placeholder="Код подтверждения" style="width: 100%; margin-top: 0.5rem;">
+          <div id="authError2" style="color: #f87171; font-size: 0.75rem; display: none;"></div>
+          <button id="btnSubmitAuthCode" class="btn-primary" style="margin-top: 0.75rem; width: 100%; justify-content: center;">Войти</button>
+        </div>
+
+        <div id="authStep3" style="display: none;">
+          <p style="font-size: 0.8rem;">В аккаунте включена двухфакторная защита (2FA). Введите пароль:</p>
+          <input type="password" id="auth2FAPassword" placeholder="Пароль 2FA" style="width: 100%; margin-top: 0.5rem;">
+          <div id="authError3" style="color: #f87171; font-size: 0.75rem; display: none;"></div>
+          <button id="btnSubmitAuth2FA" class="btn-primary" style="margin-top: 0.75rem; width: 100%; justify-content: center;">Подтвердить</button>
+        </div>
+
+        <div id="authStepSuccess" style="display: none; text-align: center; padding: 1rem 0;">
+          <div style="font-size: 1.5rem;">✅</div>
+          <p style="font-weight: 600; margin-top: 0.5rem;">Авторизация успешна!</p>
+          <p style="color: var(--text-muted); font-size: 0.8rem;">Сессия сохранена в <code>data/</code> с правами 0600.</p>
+          <button id="btnLogout" class="btn-danger" style="margin-top: 1rem;">Выйти из аккаунта</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="modal-close">Закрыть</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Vanilla App Logic -->
+  <script src="/static/app.js"></script>
+</body>
+</html>
